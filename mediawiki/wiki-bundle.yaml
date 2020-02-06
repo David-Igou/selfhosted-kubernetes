@@ -1,0 +1,134 @@
+# Source: mediawiki/templates/mediawiki-pvc.yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mediawiki-data
+  labels:
+    app: mediawiki
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "8Gi"
+# Source: mediawiki/templates/secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mediawiki
+  labels:
+    app: mediawiki
+type: Opaque
+data:  
+  mediawiki-password: "a081Rk1YNjRUTA=="
+  mariadb-password: "eU85Y0I5alJDYg=="
+---
+# Source: mediawiki/templates/svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediawiki
+  labels:
+    app: mediawiki
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+  selector:
+    app: mediawiki
+---
+# Source: mediawiki/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediawiki
+  labels:
+    app: mediawiki
+spec:
+  selector:
+    matchLabels:
+      app: mediawiki
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: mediawiki
+    spec:      
+      hostAliases:
+      - ip: "127.0.0.1"
+        hostnames:
+        - "status.localhost"
+      containers:
+      - name: mediawiki
+        image: docker.io/bitnami/mediawiki:1.34.0-debian-9-r6
+        imagePullPolicy: "IfNotPresent"
+        env:
+        - name: ALLOW_EMPTY_PASSWORD
+          value: "yes"
+        - name: MARIADB_HOST
+          value: mariadb
+        - name: MARIADB_PORT_NUMBER
+          value: "3306"
+        - name: MEDIAWIKI_DATABASE_NAME
+          value: "bitnami_mediawiki"
+        - name: MEDIAWIKI_DATABASE_USER
+          value: "bn_mediawiki"
+        - name: MEDIAWIKI_DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mediawiki
+              key: mariadb-password
+        - name: MEDIAWIKI_HOST
+          value: "127.0.0.1"
+        - name: MEDIAWIKI_USERNAME
+          value: "user"
+        - name: MEDIAWIKI_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mediawiki
+              key: mediawiki-password
+        - name: MEDIAWIKI_EMAIL
+          value: "example@example.com"
+        - name: MEDIAWIKI_WIKI_NAME
+          value: "Wiki"
+        ports:
+        - name: http
+          containerPort: 80
+        livenessProbe:
+          httpGet:
+            path: /api.php
+            port: http
+            httpHeaders:
+            - name: Host
+              value: "127.0.0.1"
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        readinessProbe:
+          httpGet:
+            path: /api.php
+            port: http
+            httpHeaders:
+            - name: Host
+              value: "127.0.0.1"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: 300m
+            memory: 512Mi
+        volumeMounts:
+        - mountPath: /bitnami/mediawiki
+          name: mediawiki-data
+          subPath: mediawiki
+      volumes:
+      - name: mediawiki-data
+        persistentVolumeClaim:
+          claimName: mediawiki-data
